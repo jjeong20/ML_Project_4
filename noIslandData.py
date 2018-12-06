@@ -7,8 +7,10 @@ December 2018
 """
 
 import numpy as np
-#import sys
 from sklearn import kernel_ridge
+from sklearn import linear_model
+
+#import sys
 
 
 
@@ -39,8 +41,8 @@ class DataBuilder:
         self.graph = self.read_graph(graph_path)
         self.raw_train_data = self.read_in_data(train_path)
         self.user_locations = self.set_locations()
-        self.X_tr, self.y_tr_lat, y_tr_lon, self.user_ids = self.build_training_set()
-        self.test_set = self.build_test_set(test_path)
+        self.X_tr, self.y_tr_lat, self.y_tr_lon = self.build_training_set()
+        self.test_set, self.user_ids = self.build_test_set(test_path)
         self.lat_preds = None
         self.lon_preds = None
 
@@ -105,7 +107,7 @@ class DataBuilder:
         X_tr = []
         y_tr_lat = []
         y_tr_lon = []
-        users = []
+        #users = []
         data = self.raw_train_data
         for data_point in data:
             user_id = data_point[0]
@@ -121,10 +123,10 @@ class DataBuilder:
                 y_tr_lon.append(data_point[5])
                 #y_point = [data_point[4], data_point[5]]    #latitude and longitude
                 #y_tr.append(y_point)
-                users.append(int(data_point[0]))
+                #users.append(int(data_point[0]))
             else: 
                 continue    
-        return (np.array(X_tr), np.array(y_tr_lat), np.array(y_tr_lon), users)
+        return (np.array(X_tr), np.array(y_tr_lat), np.array(y_tr_lon))
 
    
 
@@ -161,23 +163,26 @@ class DataBuilder:
         Builds the test set. 
         """
         to_return = []
+        users = []
         with open(filename, "r") as file:
             file.readline()			
             for line in file:
                 data = line.split(",", 5)
                 user_id = int(data[0])
+                users.append(user_id)
                 data_point = [int(data[i]) for i in range(1,5)] + self.get_avg_lat_lon(user_id)
                 to_return.append(data_point)
-        return np.array(to_return)	
+        return (np.array(to_return), users)	
 
     
-    def print_txt():
+    def print_txt(self):
         """
         Prints the predictions to a text file in the 
         """
         f = open("results.txt", "x")
+        f.write("Id,Lat,Lon\n")
         for user_id, lat_pred, lon_pred in zip(self.user_ids, self.lat_preds, self.lon_preds):
-            f.write("{0},{1},{2}".format(user_id, lat_pred, lon_pred))
+            f.write("{0},{1},{2}\n".format(user_id, lat_pred, lon_pred))
         f.close()    
 
 
@@ -197,6 +202,23 @@ class LatLonPair:
 
 
 dataBuilder = DataBuilder("posts_train.txt", "posts_test.txt", "graph.txt")
+#print(dataBuilder.X_tr.shape)
+#print(dataBuilder.y_tr_lat.shape)
+#print(dataBuilder.y_tr_lon.shape)
+
+
+model_lat = linear_model.LinearRegression()
+model_lat.fit(dataBuilder.X_tr, dataBuilder.y_tr_lat)
+dataBuilder.lat_preds = model_lat.predict(dataBuilder.test_set)
+
+model_lon = linear_model.LinearRegression()
+model_lon.fit(dataBuilder.X_tr, dataBuilder.y_tr_lon)
+dataBuilder.lon_preds = model_lon.predict(dataBuilder.test_set)
+
+
+
+
+"""
 model_lat = kernel_ridge.KernelRidge()
 model_lat.fit(dataBuilder.X_tr, dataBuilder.y_tr_lat)
 dataBuilder.lat_preds = model_lat.predict(dataBuilder.test_set)
@@ -204,6 +226,7 @@ dataBuilder.lat_preds = model_lat.predict(dataBuilder.test_set)
 model_lon = kernel_ridge.KernelRidge()
 model_lon.fit(dataBuilder.X_tr, dataBuilder.y_tr_lon)
 dataBuilder.lon_preds = model_lon.predict(dataBuilder.test_set)
+"""
 
 dataBuilder.print_txt()
 
