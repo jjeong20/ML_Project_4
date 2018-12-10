@@ -9,6 +9,8 @@ December 2018
 import numpy as np
 from sklearn import kernel_ridge
 from sklearn import linear_model
+from sklearn.preprocessing import MinMaxScaler
+
 
 #import sys
 
@@ -46,6 +48,14 @@ class DataBuilder:
         self.lat_preds = None
         self.lon_preds = None
 
+        self.replace_missing_values_training()
+        self.replace_missing_values_test()
+
+        scaler = MinMaxScaler()
+        scaler.fit(self.X_tr)
+        MinMaxScaler(copy=True, feature_range=(0, 1))
+        self.X_tr_scaled = scaler.transform(self.X_tr)
+        self.test_set_scaled = scaler.transform(self.test_set)
 
 
     def read_graph(self, filename):
@@ -112,12 +122,7 @@ class DataBuilder:
         for data_point in data:
             user_id = data_point[0]
             if data_point[4] is not 0.00 or data_point[5] is not 0.00:
-                for i in range(1, 4):
-                    if data_point[i] is 25:
-                        data_point[i] = 0
-                    else:
-                        data_point[i] += 1                    
-                X_point = [int(data_point[i]) for i in range(1,4)] + [int(data_point[6])] + self.get_avg_lat_lon(user_id)   #hour1,hour2,hour3,posts,avg_lat,avg_lon in that order
+                X_point = [int(data_point[i]) for i in range(1,4)] + [int(data_point[6])] + self.get_avg_lat_lon(user_id) + self.get_mode_lat_long(user_id, 0.088)   #hour1,hour2,hour3,posts,avg_lat,avg_lon in that order
                 X_tr.append(X_point)
                 y_tr_lat.append(data_point[4])
                 y_tr_lon.append(data_point[5])
@@ -170,7 +175,7 @@ class DataBuilder:
                 data = line.split(",", 5)
                 user_id = int(data[0])
                 users.append(user_id)
-                data_point = [int(data[i]) for i in range(1,5)] + self.get_avg_lat_lon(user_id)
+                data_point = [int(data[i]) for i in range(1,5)] + self.get_avg_lat_lon(user_id) + self.get_mode_lat_long(user_id, 0.088)
                 to_return.append(data_point)
         return (np.array(to_return), users)	
 
@@ -183,7 +188,81 @@ class DataBuilder:
         f.write("Id,Lat,Lon\n")
         for user_id, lat_pred, lon_pred in zip(self.user_ids, self.lat_preds, self.lon_preds):
             f.write("{0},{1},{2}\n".format(user_id, lat_pred, lon_pred))
-        f.close()    
+        f.close()
+    def get_mode_lat_long(self, user_id, m):
+        """
+        Takes a user ID and returns the mode latitude and longituide of all the user's friends
+        Returns [0.00, 0.00] if user has no connections.
+        Classifies location by rounding long/lat to nearest multiple of m
+        :param self:
+        :param user_id:
+        :return:
+        """
+        if user_id not in self.graph:
+            return [0.00, 0.00]
+        list_of_connections = self.graph[user_id]
+        locations = self.user_locations
+        freq_of_locations = {}
+        max_freq = 0
+        for friend_id in list_of_connections:
+            if friend_id in locations:
+                friend_location = locations[friend_id]
+                lat = int(friend_location.latitude / m) * m
+                long = int(friend_location.longitude / m) * m
+                if friend_location.latitude - lat >= m / 2:
+                    lat += m
+                if friend_location.longitude - long >= m / 2:
+                    long += m
+                if (lat, long) not in freq_of_locations:
+                    freq_of_locations[(lat, long)] = 1
+                else:
+                    freq_of_locations[(lat, long)] += 1
+                if freq_of_locations[(lat, long)] > max_freq:
+                    max_freq = freq_of_locations[(lat, long)]
+
+        # if multiple nodes are found, take the average
+        avg_lat = 0
+        avg_long = 0
+        count = 0
+        for location_pair in freq_of_locations:
+            if freq_of_locations[location_pair] == max_freq:
+                avg_lat += location_pair[0]
+                avg_long += location_pair[1]
+                count += 1
+        if count == 0:
+            return [0,0]
+        return [avg_lat / count, avg_long / count]
+
+    def replace_missing_values_training(self):
+        tot = [0 for i in range(8)]
+        count = [0 for i in range(8)]
+
+        for row in self.X_tr:
+            for i in range(len(row)):
+                if row[i] != 0:
+                    tot[i] += row[i]
+                    count[i] += 1
+
+        for row in self.X_tr:
+            for i in range(len(row)):
+                if row[i] == 0:
+                    row[i] = tot[i]/count[i]
+
+    def replace_missing_values_test(self):
+        tot = [0 for i in range(8)]
+        count = [0 for i in range(8)]
+
+        for row in self.test_set:
+            for i in range(len(row)):
+                if row[i] != 0:
+                    tot[i] += row[i]
+                    count[i] += 1
+
+        for row in self.test_set:
+            for i in range(len(row)):
+                if row[i] == 0:
+                    row[i] = tot[i]/count[i]
+
 
 
 
@@ -207,13 +286,13 @@ dataBuilder = DataBuilder("posts_train.txt", "posts_test.txt", "graph.txt")
 #print(dataBuilder.y_tr_lon.shape)
 
 
-model_lat = linear_model.LinearRegression()
-model_lat.fit(dataBuilder.X_tr, dataBuilder.y_tr_lat)
-dataBuilder.lat_preds = model_lat.predict(dataBuilder.test_set)
+model_lat = linear_model.Ridge()
+model_lat.fit(dataBuilder.X_tr_scaled, dataBuilder.y_tr_lat)
+dataBuilder.lat_preds = model_lat.predict(dataBuilder.test_set_scaled)
 
-model_lon = linear_model.LinearRegression()
-model_lon.fit(dataBuilder.X_tr, dataBuilder.y_tr_lon)
-dataBuilder.lon_preds = model_lon.predict(dataBuilder.test_set)
+model_lon = linear_model.Ridge()
+model_lon.fit(dataBuilder.X_tr_scaled, dataBuilder.y_tr_lon)
+dataBuilder.lon_preds = model_lon.predict(dataBuilder.test_set_scaled)
 
 
 
