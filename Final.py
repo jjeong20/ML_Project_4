@@ -59,19 +59,26 @@ class DataBuilder:
         :param replace_missing_values:      Replace 0's with the average of that feature space
         :param exclude_null_island:         Exclude points with (lat,lon) == (0,0) 
         :param include_posts:               Include number of posts as a feature for each data point
-        :param avg_post_hr:                 What you think the average hour that people post on social media. Used for translating post hour to longitude.
+        :param avg_post_hr:                 What you think the average hour that people post on social media. 
+                                            Used for translating post hour to longitude. -1 If you don't want to use it at all.
                                             
         :Returns:            An object with fields containing the training set and test set
         """
 
+        #set attributes
         self.mode = use_mode
         self.mode_param = mode_param
         self.lift_degree = lift_degree
         self.out_path = out_path
         self.exclude_null_island = exclude_null_island
-        self.avg_post_hr = avg_post_hr
         self.include_posts = include_posts
         self.replace_missing_values = replace_missing_values
+        self.avg_post_hr = avg_post_hr
+        self.lat_preds = None
+        self.lon_preds = None
+        self.both_preds = None
+        
+        #Build the data
         self.graph = self.read_graph(graph_path)
         self.raw_train_data = self.read_in_data(train_path)
         self.user_locations = self.set_locations()
@@ -80,11 +87,6 @@ class DataBuilder:
         
         #self.print_data(self.X_tr.tolist(), 10) #65
         #self.print_data(self.test_set.tolist(), 20)
-        self.lat_preds = None
-        self.lon_preds = None
-        self.both_preds = None
-
-
         self.fit_and_predict()
 
 
@@ -92,6 +94,8 @@ class DataBuilder:
     def read_graph(self, filename):
         """
         Reads connections from the given file and creates a mapping of user_id to that user's connections.
+
+        :param filename:    path to the text file containing the user connections data.
         """
         friend_graph = {}
         with open(filename, "r") as file:
@@ -113,9 +117,10 @@ class DataBuilder:
    
     def read_in_data(self, filename):
         """
-        Reads in the training set and represents as a 2D list. The methods set_locations() and build_training_set() then extract data from the list.
+        Reads in the training set and represents as a 2D list. 
+        The methods set_locations() and build_training_set() then extract data from the list.
     
-        Takes in the path of the training set text file as a parameter.
+        :param filename:    path of the text file containing the training set data.
         """
         data = []
         with open(filename, "r") as file:
@@ -201,6 +206,8 @@ class DataBuilder:
     def build_test_set(self, filename):
         """
         Builds the test set. Swaps 25 with 0.
+
+        :param filename:    path to file containing the test data
         """
         to_return = []
         users = []
@@ -466,6 +473,7 @@ class DataBuilder:
 
         gradient_boost = ensemble.GradientBoostingRegressor(learning_rate = 0.065, n_estimators=500)
         multi_grad = multioutput.MultiOutputRegressor(estimator=gradient_boost, n_jobs=3)
+
 
         self.print_txt()
         
